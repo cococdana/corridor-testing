@@ -45,4 +45,3 @@ curl -s http://127.0.0.1:8000/application-kit \
 ```bash
 pytest -q
 ```
-
