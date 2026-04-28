@@ -155,8 +155,17 @@ async def upload_and_analyze(
                     {html.escape(result.cover_letter)}<br><br>
                     <strong>Checklist:</strong><br>
                     {html.escape(str(result.checklist))}<br><br>
-                    <strong>Resume Suggestions:</strong><br>
-                    {html.escape(result.resume)}
+                    <strong>Resume Summary:</strong><br>
+                    <strong>Headline:</strong> {html.escape(result.resume.headline)}<br>
+                    <strong>Extracted Skills:</strong> {html.escape(', '.join(result.resume.extracted_skills))}<br>
+                    <strong>Key Bullets:</strong><br>
+                    {'<br>'.join(f'• {html.escape(bullet)}' for bullet in result.resume.key_bullets)}<br><br>
+                    <strong>Match Analysis:</strong><br>
+                    <strong>Score:</strong> {result.match.score:.2f}<br>
+                    <strong>Matched Must-Haves:</strong> {html.escape(', '.join(result.match.matched_must_haves))}<br>
+                    <strong>Missing Must-Haves:</strong> {html.escape(', '.join(result.match.missing_must_haves))}<br>
+                    <strong>Matched Nice-to-Haves:</strong> {html.escape(', '.join(result.match.matched_nice_to_haves))}<br>
+                    <strong>Suggested Resume Edits:</strong> {html.escape(str(result.match.suggested_resume_edits))}
                 </div>
             </div>
             <a href="/">Analyze Another Application</a>
