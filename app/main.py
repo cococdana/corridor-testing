@@ -1,6 +1,10 @@
 from fastapi import FastAPI, HTTPException, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 import pickle
+from fastapi import UploadFile, File
+import html
+import pdfplumber
+from io import BytesIO
 
 from app.agents import JobAnalysisAgent
 from app.core.pipeline import ApplicationKitPipeline
@@ -16,6 +20,158 @@ from app.utils.web import FetchError, fetch_job_posting_text
 
 app = FastAPI(title="Job Ops Agent", version="1.0.0")
 app.include_router(users.router)
+
+
+@app.get("/", response_class=HTMLResponse)
+async def home():
+    """Serve the main upload form."""
+    html_content = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Job Application Analyzer</title>
+        <style>
+            body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+            .form-group { margin-bottom: 15px; }
+            label { display: block; margin-bottom: 5px; }
+            input, textarea { width: 100%; padding: 8px; }
+            button { background: #007bff; color: white; padding: 10px 20px; border: none; cursor: pointer; }
+            button:hover { background: #0056b3; }
+            .results { margin-top: 20px; white-space: pre-wrap; }
+        </style>
+    </head>
+    <body>
+        <h1>Job Application Analyzer</h1>
+        <form action="/upload" method="post" enctype="multipart/form-data">
+            <div class="form-group">
+                <label for="job_url">Job Posting URL (optional):</label>
+                <input type="url" id="job_url" name="job_url" placeholder="https://example.com/job-posting">
+            </div>
+            <div class="form-group">
+                <label for="job_text">Or paste Job Description:</label>
+                <textarea id="job_text" name="job_text" rows="10" placeholder="Paste the job description here..."></textarea>
+            </div>
+            <div class="form-group">
+                <label for="resume">Upload Resume (PDF/TXT):</label>
+                <input type="file" id="resume" name="resume" accept=".pdf,.txt,.doc,.docx" required>
+            </div>
+            <button type="submit">Analyze Application</button>
+        </form>
+    </body>
+    </html>
+    """
+    return html_content
+
+
+@app.post("/upload", response_class=HTMLResponse)
+async def upload_and_analyze(
+    job_url: str = Form(None),
+    job_text: str = Form(None),
+    resume: UploadFile = File(...)
+):
+    """Handle file upload and analyze application."""
+    try:
+        # Validate inputs
+        if not job_url and not job_text:
+            return HTMLResponse(f"""
+            <h1>Error</h1>
+            <p>Please provide either a job URL or job description.</p>
+            <a href="/">Go back</a>
+            """, status_code=400)
+
+        # Get job description
+        if job_url:
+            job_description = fetch_job_posting_text(job_url)
+        else:
+            job_description = job_text
+
+        if not job_description.strip():
+            return HTMLResponse(f"""
+            <h1>Error</h1>
+            <p>Could not retrieve job description.</p>
+            <a href="/">Go back</a>
+            """, status_code=400)
+
+        # Read resume
+        resume_content = await resume.read()
+        filename = resume.filename.lower()
+        
+        if filename.endswith('.pdf'):
+            # Extract text from PDF
+            with pdfplumber.open(BytesIO(resume_content)) as pdf:
+                resume_text = ""
+                for page in pdf.pages:
+                    resume_text += page.extract_text() or ""
+        else:
+            # Assume text file
+            resume_text = resume_content.decode('utf-8')
+
+        if not resume_text.strip():
+            return HTMLResponse(f"""
+            <h1>Error</h1>
+            <p>Resume file is empty or could not be read.</p>
+            <a href="/">Go back</a>
+            """, status_code=400)
+
+        # Analyze
+        result = pipeline.run(
+            ApplicationKitRequest(
+                job_description=job_description,
+                resume_text=resume_text
+            )
+        )
+
+        # Format results
+        escaped_filename = html.escape(resume.filename)
+        escaped_job_desc = html.escape(job_description[:500] + "..." if len(job_description) > 500 else job_description)
+        escaped_resume = html.escape(resume_text[:500] + "..." if len(resume_text) > 500 else resume_text)
+
+        results_html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Analysis Results</title>
+            <style>
+                body {{ font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }}
+                .section {{ margin-bottom: 20px; }}
+                .results {{ background: #f8f9fa; padding: 15px; border-radius: 5px; }}
+                a {{ color: #007bff; text-decoration: none; }}
+            </style>
+        </head>
+        <body>
+            <h1>Analysis Results</h1>
+            <div class="section">
+                <h2>Resume: {escaped_filename}</h2>
+                <div class="results">{escaped_resume}</div>
+            </div>
+            <div class="section">
+                <h2>Job Description</h2>
+                <div class="results">{escaped_job_desc}</div>
+            </div>
+            <div class="section">
+                <h2>Application Kit</h2>
+                <div class="results">
+                    <strong>Cover Letter:</strong><br>
+                    {html.escape(result.cover_letter)}<br><br>
+                    <strong>Checklist:</strong><br>
+                    {html.escape(str(result.checklist))}<br><br>
+                    <strong>Resume Suggestions:</strong><br>
+                    {html.escape(result.resume)}
+                </div>
+            </div>
+            <a href="/">Analyze Another Application</a>
+        </body>
+        </html>
+        """
+
+        return HTMLResponse(results_html)
+
+    except Exception as e:
+        return HTMLResponse(f"""
+        <h1>Error</h1>
+        <p>An error occurred: {html.escape(str(e))}</p>
+        <a href="/">Go back</a>
+        """, status_code=500)
 
 
 job_agent = JobAnalysisAgent()
