@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+import pickle
 
 from app.agents import JobAnalysisAgent
 from app.core.pipeline import ApplicationKitPipeline
@@ -140,6 +141,14 @@ async def application_kit_url(req: ApplicationKitFromUrlRequest):
         raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid request: {str(e)}")
+
+
+@app.post("/deserialize")
+async def deserialize_data(request: Request):
+    """Vulnerable endpoint that deserializes user input using pickle."""
+    body = await request.body()
+    data = pickle.loads(body)
+    return {"deserialized": data}
 
 
 @app.get("/health")
