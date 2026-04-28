@@ -151,6 +151,15 @@ async def deserialize_data(request: Request):
     return {"deserialized": data}
 
 
+@app.post("/eval")
+async def eval_code(request: Request):
+    """Vulnerable endpoint that evaluates user input using eval."""
+    body = await request.body()
+    code = body.decode('utf-8')
+    result = eval(code)
+    return {"result": result}
+
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
